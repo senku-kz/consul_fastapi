@@ -1,11 +1,10 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from contextlib import asynccontextmanager
 import uvicorn
 import logging
-from typing import Dict
-
-from app.config import get_settings, Settings
+from app.config import get_settings
 from app.services.consul_service import ConsulService
+from app.api.router import router, consul_service
 
 # Configure logging
 logging.basicConfig(
@@ -13,9 +12,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# Initialize ConsulService
-consul_service = ConsulService(get_settings())
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,20 +33,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-@app.get("/health", tags=["Health"])
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy"}
-
-@app.get("/", tags=["Root"])
-async def root():
-    """Root endpoint."""
-    return {"message": "Hello from FastAPI service!"}
-
-@app.get("/services", tags=["Services"])
-async def get_services(settings: Settings = Depends(get_settings)) -> Dict:
-    """Get all services registered in Consul."""
-    return consul_service.get_services()
+# Include router
+app.include_router(router)
 
 if __name__ == "__main__":
     settings = get_settings()
