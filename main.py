@@ -1,70 +1,62 @@
-from fastapi import FastAPI
-import consul
-import uvicorn
-import socket
-import requests
-from typing import Dict
+from fastapi import FastAPI, Depends
 from contextlib import asynccontextmanager
+import uvicorn
+import logging
+from typing import Dict
+
+from app.config import get_settings, Settings
+from app.services.consul_service import ConsulService
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Initialize ConsulService
+consul_service = ConsulService(get_settings())
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    global service_id
-    service_id = register_service()
-    yield
-    # Shutdown
-    deregister_service(service_id)
+    """Manage application lifespan events."""
+    try:
+        # Startup
+        consul_service.register_service()
+        logger.info("Application startup completed")
+        yield
+    finally:
+        # Shutdown
+        consul_service.deregister_service()
+        logger.info("Application shutdown completed")
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="FastAPI Service",
+    description="A FastAPI service with Consul integration",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
-# Consul configuration
-CONSUL_HOST = "localhost"
-CONSUL_PORT = 8500
-SERVICE_NAME = "fastapi-service"
-SERVICE_PORT = 8000
-
-# Initialize Consul client
-consul_client = consul.Consul(host=CONSUL_HOST, port=CONSUL_PORT)
-
-def get_host_ip():
-    hostname = socket.gethostname()
-    print(f"Hostname: {hostname}")
-    return socket.gethostbyname(hostname)
-
-def register_service():
-    service_id = f"{SERVICE_NAME}-{SERVICE_PORT}"
-    
-    # Register service with Consul
-    consul_client.agent.service.register(
-        name=SERVICE_NAME,
-        service_id=service_id,
-        address=get_host_ip(),
-        port=SERVICE_PORT,
-        tags=["fastapi", "api"],
-        check=consul.Check.http(
-            url=f"http://{get_host_ip()}:{SERVICE_PORT}/health",
-            interval="10s",
-            timeout="5s"
-        )
-    )
-    return service_id
-
-def deregister_service(service_id: str):
-    consul_client.agent.service.deregister(service_id)
-
-@app.get("/health")
+@app.get("/health", tags=["Health"])
 async def health_check():
+    """Health check endpoint."""
     return {"status": "healthy"}
 
-@app.get("/")
+@app.get("/", tags=["Root"])
 async def root():
+    """Root endpoint."""
     return {"message": "Hello from FastAPI service!"}
 
-@app.get("/services")
-async def get_services() -> Dict:
-    # Get all services registered in Consul
-    services = consul_client.agent.services()
-    return services
+@app.get("/services", tags=["Services"])
+async def get_services(settings: Settings = Depends(get_settings)) -> Dict:
+    """Get all services registered in Consul."""
+    return consul_service.get_services()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=SERVICE_PORT) 
+    settings = get_settings()
+    uvicorn.run(
+        "main:app",
+        host=settings.HOST,
+        port=settings.PORT,
+        reload=True
+    ) 
