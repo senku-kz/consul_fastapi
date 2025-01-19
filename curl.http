@@ -1,0 +1,8 @@
+### Health Check
+GET http://localhost:8000/health
+
+### Root Endpoint
+GET http://localhost:8000/
+
+### Get All Services
+GET http://localhost:8000/services 
