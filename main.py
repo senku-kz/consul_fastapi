@@ -4,8 +4,18 @@ import uvicorn
 import socket
 import requests
 from typing import Dict
+from contextlib import asynccontextmanager
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global service_id
+    service_id = register_service()
+    yield
+    # Shutdown
+    deregister_service(service_id)
+
+app = FastAPI(lifespan=lifespan)
 
 # Consul configuration
 CONSUL_HOST = "localhost"
@@ -18,6 +28,7 @@ consul_client = consul.Consul(host=CONSUL_HOST, port=CONSUL_PORT)
 
 def get_host_ip():
     hostname = socket.gethostname()
+    print(f"Hostname: {hostname}")
     return socket.gethostbyname(hostname)
 
 def register_service():
@@ -40,15 +51,6 @@ def register_service():
 
 def deregister_service(service_id: str):
     consul_client.agent.service.deregister(service_id)
-
-@app.on_event("startup")
-async def startup_event():
-    global service_id
-    service_id = register_service()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    deregister_service(service_id)
 
 @app.get("/health")
 async def health_check():
